@@ -41,6 +41,7 @@ pub fn demo(session: Arc<Mutex<Session>>){
 /// + composed of a Participant and Experiment object.
 /// + runs linearly through the steps of the experiment
 /// + sending high-level events
+
  
 pub mod session {
     use super::{Instant, Language, Text};
@@ -130,6 +131,8 @@ pub mod session {
 }
 
 
+/// Block level
+
 pub mod block { 
     use super::trial::{Trial, Observation};
     use super::{Duration, Instant, Delay, Key, Text};
@@ -140,7 +143,7 @@ pub mod block {
     /// 
     /// + running through trials
     /// + sending block-level events
-    /// + 
+    /// 
     #[derive(Clone)]
     pub struct Block{
         pub id: Instant,
@@ -151,7 +154,7 @@ pub mod block {
         pub state: State,
     }
 
-   
+    
     impl Default for Block {
         fn default() -> Self {
             let trials = vec![Trial::default(); 3];
@@ -165,15 +168,34 @@ pub mod block {
         }
     }
 
-    #[derive(Clone, Copy, PartialEq, Debug)]
-    
+    #[derive(Clone, PartialEq)]    
     /// Block states
     /// 
     pub enum State {
         Init,
         Prelude,
-        Present,
+        Present(usize), // trial number
         Relax
+    }
+
+    /// Preludes types for Blocks
+    /// 
+    #[derive(Clone, PartialEq, Debug)]
+    pub enum Prelude {
+        Now,
+        Blank(Duration),
+        Instruct(Duration, Text),
+        InstructKeys(Vec<Key>, Text)
+    }
+
+    /// Relax types for Blocks
+    ///
+    #[derive(Clone)]
+    pub enum Relax {
+        Now,
+        Wait(Duration),
+        Keys(Vec<Key>),
+        KeysMaxWait(Vec<Key>, Duration)
     }
 
     
@@ -185,9 +207,8 @@ pub mod block {
     /// 1. initialize the output vector
     /// 2. do the prelude
     /// 3. cycle through trials and 
-    ///     + collect Observations
-    ///     + send events
-    /// 4. Runs the relax period
+    /// 4. Run the relax period
+    /// 
         pub fn run(&mut self) -> Vec<Observation> {
             let mut out: Vec<Observation> = Vec::new();
             self.state = State::Prelude;            
@@ -215,34 +236,20 @@ pub mod block {
         }
     }
 
-    #[derive(Clone)]
-    pub enum Prelude {
-        Now,
-        Blank(Duration),
-        Instruct(Duration, Text),
-        InstructKeys(Vec<Key>, Text)
-    }
-
-    #[derive(Clone)]
-    pub enum Relax {
-        Now,
-        Wait(Duration),
-        Keys(Vec<Key>),
-        KeysMaxWait(Vec<Key>, Duration)
-    }
-
-
-
 
 }
+
+
+/// Trial-level
+/// 
 
 pub mod trial { 
     use super::{Duration, Delay, Key};
 
-    /// Blocks and Trials
+    /// A trial is a Stimulus with a Prelude and Advance frame
     /// 
 
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq)]
     pub struct Trial {
         pub prelude: Prelude,
         pub stimulus: Stimulus,
@@ -283,18 +290,26 @@ pub mod trial {
             }
             self.state = State::Present;
             // Emulating the incoming response from the participant.
-            // This depends on the 
-            
+            // 
+            // Here we will have time-outs and user events intermixed.
+            // Would be nice to have some async here, maybe 
+            // block_on(select())
+            Delay::new(Duration::from_millis(500));
             let response = Response::Choice('y');
             Observation::new(self.clone(), response)
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq)]
     pub struct Observation {
         pub trial: Trial,
         pub response: Response,
     }
+    
+    /// An observation is composed of a trial and an observation
+
+    // We will need access to higher level information
+    // to add part and exp level data
 
     impl Observation {
         pub fn new(trial: Trial, response: Response) -> Self {
@@ -303,7 +318,7 @@ pub mod trial {
     }
 
     use image;
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq)]
     pub enum Stimulus {
         Blank(Duration),
         Text(Duration, i8, [i8; 3]),
@@ -315,7 +330,7 @@ pub mod trial {
         {self}
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq)]
     pub enum Prelude {
         Now,
         Blank(Duration),
@@ -323,14 +338,14 @@ pub mod trial {
         Prime(Duration, Stimulus),
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq)]
     pub enum Advance {
         Wait(Duration),
         Keys(Vec<Key>),
         KeysMaxWait(Vec<Key>, Duration)
     }
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, PartialEq)]
     pub enum Response {
         RT(Duration),
         RTCorrect(Duration, bool),
@@ -339,11 +354,19 @@ pub mod trial {
         TooLate,
     }
 
+    #[derive(Clone, Copy, PartialEq)]
     pub enum Feedback{Correct, Incorrect, ThankYou}
 }
 
 
-pub mod data {
+
+/// Output
+/// 
+/// in terms of
+/// + event stream
+/// + observations
+
+pub mod output {
     use super::{Key, Duration};
     use super::session::Participant;
     use super::trial::{Stimulus, Response};

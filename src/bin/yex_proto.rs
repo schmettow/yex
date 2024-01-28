@@ -11,9 +11,7 @@ fn main() {
     let session = Arc::new(Mutex::new(Session::new(exp, part)));
     let builder = Builder::new();
     let join_handle = 
-        builder.spawn(move || {
-            yex::demo(session)
-        }).unwrap();
+        builder.spawn(move || {yex::demo(session)}).unwrap();
     match join_handle.join() {
         Ok(obs) => 
             {println!("{} observations collected", obs.len())},

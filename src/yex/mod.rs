@@ -11,7 +11,9 @@
 /// a session can be created by combining an Experiment and a Participant.
 /// 
 /// The hierarchical building blocks are Session --> Block --> Trial --> Stimulus
-
+///
+/// The Yex runtime is implemented as a state machine to work with 
+/// an immediate Gui, like Egui.
 mod egui;
 
 pub use std::time::{Instant, Duration};
@@ -31,10 +33,11 @@ pub enum Event {
     AdvanceAfter(Duration)
 }
 
-/// Demo program
+/// Demo runtime
 /// 
 /// cycles through a brief demo experiment
 /// Collects virtual responses and completes with a Vector of Observations
+
 use session::*;
 use trial::Observation;
 pub fn demo(session: Arc<Mutex<Session>>) -> Vec<trial::Observation>{

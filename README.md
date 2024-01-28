@@ -1,4 +1,4 @@
-# Yex is Your Experiment
+# Yex is Yourself Experiments
 
 The *goal* is to create a simple way of running experiments that presents visual stimuli.
 In fact, Yex will be not much more than a basic slideshow program, as it is meant to connect with 

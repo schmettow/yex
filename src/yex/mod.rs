@@ -46,12 +46,12 @@ pub fn demo(session: Arc<Mutex<Session>>) -> Vec<trial::Observation>{
     session.state = State::Welcome;
     println!("Welcome");
     sleep(Duration::from_millis(500));
-    for block in &mut session.exp.blocks{
-        println!("Block {:?}", block.id);
-        let obs = block.run();
+    for block in session.exp.blocks.iter(){
+        println!("Block ID {:?}, Trials: {}", block.id, block.trials.len());
+        let obs = block.clone().run();
         match obs {
             Some(mut obs) => {obs_out.append(&mut obs);},
-            None => {println!()},
+            None => {println!("No observations collected")},
         }
     }
     session.state = State::Goodbye;

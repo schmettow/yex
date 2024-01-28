@@ -9,14 +9,12 @@ fn main() {
     let part = Participant::default();
     println!("Hello {}.", part.id);
     let session = Arc::new(Mutex::new(Session::new(exp, part)));
-    // let mut obs: Option<Vec<Observation>>;
-    
     let builder = Builder::new();
     let join_handle = 
         builder.spawn(move || {
             yex::demo(session)
-        }).unwrap().join();
-    match join_handle {
+        }).unwrap();
+    match join_handle.join() {
         Ok(obs) => 
             {println!("{} observations collected", obs.len())},
         Err(_) => println!("Session failed")

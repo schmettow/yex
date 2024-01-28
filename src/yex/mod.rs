@@ -1,10 +1,23 @@
+/// YEX is Yourself Experimentation
+/// 
+/// This library provides data structures to build 
+/// sequential experiments with visual stimuli
+/// 
+/// By limiting the use case to strictly sequential interaction,
+/// no or little async/await will be required. More complex experiments 
+/// can still be constructed by using Blocks.
+/// 
+/// The main run time container object is Session, which is constructed as a ArcMut in main(). In the main program, 
+/// a session can be created by combining an Experiment and a Participant.
+/// 
+/// The hierarchical building blocks are Session --> Block --> Trial --> Stimulus
+
+mod egui;
+
 pub use std::time::{Instant, Duration};
-// pub use futures_timer::Delay;
 pub use std::thread::sleep;
 pub use std::sync::{Arc,Mutex};
 pub use isolang::Language;
-pub use futures;
-
 
 /// Input events
 pub type Text = String;

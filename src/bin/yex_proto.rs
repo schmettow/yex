@@ -1,6 +1,6 @@
 use yex::session::{Participant, Experiment,Session};
-use yex::output::YexEvent;
-use std::sync::mpsc::{channel, Sender, Receiver};
+use yex::output::YexRecord;
+use std::sync::mpsc::channel;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, Builder};
 
@@ -14,9 +14,12 @@ fn main() {
     // Creating the session
     let session = Arc::new(Mutex::new(Session::new(exp, part)));
     // Starting the event recorder channel
-    let (event_snd, event_rec)  = channel::<YexEvent>();
+    let (event_snd, event_rec)  = channel::<YexRecord>();
     // Detached mock task to receive and print the events
-    thread::spawn(move || {loop {match event_rec.recv() {Ok(r) => {println!("{:?}",r)}, _ => {}} }});
+    thread::spawn(move || {
+        loop {match event_rec.recv() {
+            Ok(r) => {println!("{:?}",r)}, 
+            _ => {}}}});
     // Building the session thread, because we want it to return a value
     let builder = Builder::new();
     let join_handle = 

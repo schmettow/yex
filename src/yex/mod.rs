@@ -50,12 +50,10 @@ pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<output::YexRecord>)
         -> Vec<trial::Observation>{
     let mut obs_out: Vec<Observation> = Vec::new();
     let mut session = session.lock().unwrap();
-    session.state = State::Welcome;
-    println!("Welcome");
-    sleep(Duration::from_millis(500));
     events_out.send(YexEvent::Session().into()).unwrap();
+    session.state = State::Welcome;
+    sleep(Duration::from_millis(500));
     for block in session.exp.blocks.iter(){
-        // println!("Block ID {:?}, Trials: {}", block.id, block.trials.len());
         let obs 
             = block.clone().run(events_out.clone());
         match obs {

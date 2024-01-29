@@ -45,15 +45,17 @@ pub enum Event {
 
 use session::*;
 use trial::Observation;
-pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<output::YexEvent>) 
+use output::YexRecord;
+pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<output::YexRecord>) 
         -> Vec<trial::Observation>{
     let mut obs_out: Vec<Observation> = Vec::new();
     let mut session = session.lock().unwrap();
     session.state = State::Welcome;
     println!("Welcome");
     sleep(Duration::from_millis(500));
-    events_out.send(YexEvent::Session()).unwrap();
-    for (block) in session.exp.blocks.iter(){
+    let record = YexRecord(Instant::now(), YexEvent::Session()); 
+    events_out.send(record).unwrap();
+    for block in session.exp.blocks.iter(){
         // println!("Block ID {:?}, Trials: {}", block.id, block.trials.len());
         let obs 
             = block.clone().run(events_out.clone());
@@ -168,7 +170,7 @@ pub mod session {
 
 pub mod block { 
     use super::trial::{Trial, Observation};
-    use super::{Sender, Duration, Instant, sleep, Key, Text, YexEvent};
+    use super::{Sender, Duration, Instant, sleep, Key, Text, YexRecord, YexEvent};
 
     /// A Block is a sequences of Trials
     /// 
@@ -242,8 +244,9 @@ pub mod block {
     /// 3. cycle through trials and 
     /// 4. Run the relax period
     /// 
-        pub fn run(&mut self, events_out: Sender<YexEvent>) -> Option<Vec<Observation>> {
-            events_out.send(YexEvent::Block()).unwrap();
+        pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Vec<Observation>> {
+            let record = YexRecord(Instant::now(), YexEvent::Block());
+            events_out.send(record).unwrap();
             let mut out: Vec<Observation> = Vec::new();
             self.state = State::Prelude;
             match self.prelude.clone() {
@@ -264,8 +267,7 @@ pub mod block {
                     None => {},
                     Some(obs) => {
                         // collecting new observation
-                        out.push(obs); 
-                        ;}
+                        out.push(obs);}
                 }
             }
 
@@ -287,6 +289,8 @@ pub mod block {
 /// 
 
 pub mod trial { 
+    use crate::output::YexRecord;
+
     use super::{Duration, Instant, sleep, Key, Sender, YexEvent};
 
     /// A trial is a Stimulus with a Prelude and Advance frame
@@ -323,8 +327,9 @@ pub mod trial {
             self.stimulus.load();
             self.clone()
         }
-        pub fn run(&mut self, events_out: Sender<YexEvent>) -> Option<Observation> {
-            events_out.send(YexEvent::Trial()).unwrap();
+        pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Observation> {
+            let record = YexRecord(Instant::now(), YexEvent::Trial());
+            events_out.send(record).unwrap();
             self.prepare();
             self.state = State::Prelude;
             match self.prelude {
@@ -334,7 +339,8 @@ pub mod trial {
                 Prelude::Prime(_,_) => todo!(),
             }
             self.state = State::Present;
-            events_out.send(YexEvent::Stimulus()).unwrap();
+            let record = YexRecord(Instant::now(), YexEvent::Stimulus());
+            events_out.send(record).unwrap();
             // Emulating the incoming response from the participant.
             // 
             // Here we will have time-outs and user events intermixed.
@@ -342,7 +348,8 @@ pub mod trial {
             // block_on(select())
             sleep(Duration::from_millis(500));
             let response = Response::Choice('y');
-            events_out.send(YexEvent::Response(response)).unwrap();
+            let record = YexRecord(Instant::now(), YexEvent::Response(response)); 
+            events_out.send(record).unwrap();
             return Some(Observation::new(self.clone(), response))
         }
     }
@@ -415,8 +422,7 @@ pub mod trial {
 
 pub mod output {
     use super::{Key, Instant};
-    use super::session::Participant;
-    use super::trial::{Stimulus, Response};
+    use super::trial::Response;
 
     #[derive(Debug)]
     pub enum YexError {
@@ -437,8 +443,8 @@ pub mod output {
     }
 
 
-     
-    pub struct YexRecord (Instant, YexEvent);
+    #[derive(Debug)]
+    pub struct YexRecord (pub Instant, pub YexEvent);
 
     /* use std::fmt::{Display, Formatter, Result};
     impl std::fmt::Display for YexRecord {

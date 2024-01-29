@@ -53,8 +53,7 @@ pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<output::YexRecord>)
     session.state = State::Welcome;
     println!("Welcome");
     sleep(Duration::from_millis(500));
-    let record = YexRecord(Instant::now(), YexEvent::Session()); 
-    events_out.send(record).unwrap();
+    events_out.send(YexEvent::Session().into()).unwrap();
     for block in session.exp.blocks.iter(){
         // println!("Block ID {:?}, Trials: {}", block.id, block.trials.len());
         let obs 
@@ -245,8 +244,7 @@ pub mod block {
     /// 4. Run the relax period
     /// 
         pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Vec<Observation>> {
-            let record = YexRecord(Instant::now(), YexEvent::Block());
-            events_out.send(record).unwrap();
+            events_out.send(YexEvent::Block().into()).unwrap();
             let mut out: Vec<Observation> = Vec::new();
             self.state = State::Prelude;
             match self.prelude.clone() {
@@ -291,7 +289,7 @@ pub mod block {
 pub mod trial { 
     use crate::output::YexRecord;
 
-    use super::{Duration, Instant, sleep, Key, Sender, YexEvent};
+    use super::{Duration, sleep, Key, Sender, YexEvent};
 
     /// A trial is a Stimulus with a Prelude and Advance frame
     /// 
@@ -328,8 +326,7 @@ pub mod trial {
             self.clone()
         }
         pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Observation> {
-            let record = YexRecord(Instant::now(), YexEvent::Trial());
-            events_out.send(record).unwrap();
+            events_out.send(YexEvent::Trial().into()).unwrap();
             self.prepare();
             self.state = State::Prelude;
             match self.prelude {
@@ -339,8 +336,7 @@ pub mod trial {
                 Prelude::Prime(_,_) => todo!(),
             }
             self.state = State::Present;
-            let record = YexRecord(Instant::now(), YexEvent::Stimulus());
-            events_out.send(record).unwrap();
+            events_out.send(YexEvent::Stimulus().into()).unwrap();
             // Emulating the incoming response from the participant.
             // 
             // Here we will have time-outs and user events intermixed.
@@ -348,8 +344,7 @@ pub mod trial {
             // block_on(select())
             sleep(Duration::from_millis(500));
             let response = Response::Choice('y');
-            let record = YexRecord(Instant::now(), YexEvent::Response(response)); 
-            events_out.send(record).unwrap();
+            events_out.send(YexEvent::Response(response).into()).unwrap();
             return Some(Observation::new(self.clone(), response))
         }
     }
@@ -442,6 +437,16 @@ pub mod output {
         Response(Response),
     }
 
+    /// Into from Event to Record
+    /// 
+    /// simply adds Instant::now() as time stamp
+    /// should therefore be used close in time
+    /// to when the event arrived.
+    impl std::convert::Into<YexRecord> for YexEvent {
+        fn into(self) -> YexRecord {
+            return YexRecord(Instant::now(), self)
+        }
+    }
 
     #[derive(Debug)]
     pub struct YexRecord (pub Instant, pub YexEvent);

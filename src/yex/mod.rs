@@ -14,11 +14,16 @@
 ///
 /// The Yex runtime is implemented as a state machine to work with 
 /// an immediate Gui, like Egui.
+/// 
+
 mod egui;
 
 pub use std::time::{Instant, Duration};
 pub use std::thread::sleep;
 pub use std::sync::{Arc,Mutex};
+pub use std::sync::mpsc::{channel, Sender, Receiver};
+pub use output::YexEvent;
+//use futures::channel::mpsc;
 pub use isolang::Language;
 
 /// Input events
@@ -40,15 +45,18 @@ pub enum Event {
 
 use session::*;
 use trial::Observation;
-pub fn demo(session: Arc<Mutex<Session>>) -> Vec<trial::Observation>{
+pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<output::YexEvent>) 
+        -> Vec<trial::Observation>{
     let mut obs_out: Vec<Observation> = Vec::new();
     let mut session = session.lock().unwrap();
     session.state = State::Welcome;
     println!("Welcome");
     sleep(Duration::from_millis(500));
-    for block in session.exp.blocks.iter(){
-        println!("Block ID {:?}, Trials: {}", block.id, block.trials.len());
-        let obs = block.clone().run();
+    events_out.send(YexEvent::Session()).unwrap();
+    for (block) in session.exp.blocks.iter(){
+        // println!("Block ID {:?}, Trials: {}", block.id, block.trials.len());
+        let obs 
+            = block.clone().run(events_out.clone());
         match obs {
             Some(mut obs) => {obs_out.append(&mut obs);},
             None => {println!("No observations collected")},
@@ -160,7 +168,7 @@ pub mod session {
 
 pub mod block { 
     use super::trial::{Trial, Observation};
-    use super::{Duration, Instant, sleep, Key, Text};
+    use super::{Sender, Duration, Instant, sleep, Key, Text, YexEvent};
 
     /// A Block is a sequences of Trials
     /// 
@@ -234,10 +242,10 @@ pub mod block {
     /// 3. cycle through trials and 
     /// 4. Run the relax period
     /// 
-        pub fn run(&mut self) -> Option<Vec<Observation>> {
+        pub fn run(&mut self, events_out: Sender<YexEvent>) -> Option<Vec<Observation>> {
+            events_out.send(YexEvent::Block()).unwrap();
             let mut out: Vec<Observation> = Vec::new();
             self.state = State::Prelude;
-            println!("Block Prelude");          
             match self.prelude.clone() {
                 Prelude::Now
                     => {},
@@ -249,18 +257,22 @@ pub mod block {
             }
 
             for trial in self.trials.clone(){
-                println!("Trial");
-                let obs = trial.clone().run();
-                print!("Response...");
+                // making an observation by running a trial
+                let obs 
+                    = trial.clone().run(events_out.clone());
                 match obs {
                     None => {},
-                    Some(obs) => {out.push(obs); println!("Collected");}
+                    Some(obs) => {
+                        // collecting new observation
+                        out.push(obs); 
+                        ;}
                 }
             }
 
             self.state = State::Relax;
             match self.relax {
-                Relax::Now => {},
+                Relax::Now 
+                    => {}, // do nothing is not the same as not implemented
                 Relax::Wait(dur) 
                     => {sleep(dur);},
                 _   => {todo!();}
@@ -268,8 +280,6 @@ pub mod block {
             Some(out)
         }
     }
-
-
 }
 
 
@@ -277,7 +287,7 @@ pub mod block {
 /// 
 
 pub mod trial { 
-    use super::{Duration, sleep, Key};
+    use super::{Duration, Instant, sleep, Key, Sender, YexEvent};
 
     /// A trial is a Stimulus with a Prelude and Advance frame
     /// 
@@ -308,11 +318,13 @@ pub mod trial {
     }
     
     impl Trial {
+        
         pub fn prepare(&mut self) -> Self{
             self.stimulus.load();
             self.clone()
         }
-        pub fn run(&mut self) -> Option<Observation> {
+        pub fn run(&mut self, events_out: Sender<YexEvent>) -> Option<Observation> {
+            events_out.send(YexEvent::Trial()).unwrap();
             self.prepare();
             self.state = State::Prelude;
             match self.prelude {
@@ -322,6 +334,7 @@ pub mod trial {
                 Prelude::Prime(_,_) => todo!(),
             }
             self.state = State::Present;
+            events_out.send(YexEvent::Stimulus()).unwrap();
             // Emulating the incoming response from the participant.
             // 
             // Here we will have time-outs and user events intermixed.
@@ -329,6 +342,7 @@ pub mod trial {
             // block_on(select())
             sleep(Duration::from_millis(500));
             let response = Response::Choice('y');
+            events_out.send(YexEvent::Response(response)).unwrap();
             return Some(Observation::new(self.clone(), response))
         }
     }
@@ -378,7 +392,7 @@ pub mod trial {
         KeysMaxWait(Vec<Key>, Duration)
     }
 
-    #[derive(Clone, Copy, PartialEq)]
+    #[derive(Debug, Clone, Copy, PartialEq)]
     pub enum Response {
         RT(Duration),
         RTCorrect(Duration, bool),
@@ -400,39 +414,41 @@ pub mod trial {
 /// + observations
 
 pub mod output {
-    use super::{Key, Duration};
+    use super::{Key, Instant};
     use super::session::Participant;
     use super::trial::{Stimulus, Response};
 
-    #[allow(dead_code)]
-    enum YexError {
-        FileNotFound(Stimulus),
-        PartInterrupt(Participant),
+    #[derive(Debug)]
+    pub enum YexError {
+        FileNotFound(),
+        PartInterrupt(),
 
     }
 
-    #[allow(dead_code)]
-    enum YldEvent {
+    #[derive(Debug)]
+    pub enum YexEvent {
         Error(YexError),
-        Block(usize),
-        Relax(Duration),
-        FixCross(Duration),
-        StimPresented(Stimulus),
+        Session(),
+        Block(),
+        Trial(),
+        Stimulus(),
         KeyPress(Key),
         Response(Response),
     }
 
 
      
-    /*struct YldRecord {
-        time: Instant,
-        event: YldEvent
-    }
+    pub struct YexRecord (Instant, YexEvent);
 
-
-    impl YldEvent {
-        fn to_csv(self) ->  String {
-            format!("{},{}", "time", "event")
+    /* use std::fmt::{Display, Formatter, Result};
+    impl std::fmt::Display for YexRecord {
+        // This trait requires `fmt` with this exact signature.
+        fn fmt(&self, f: &mut Formatter) -> Result {
+            // Write strictly the first element into the supplied output
+            // stream: `f`. Returns `fmt::Result` which indicates whether the
+            // operation succeeded or failed. Note that `write!` uses syntax which
+            // is very similar to `println!`.
+            write!(f, "{}", self.0)
         }
     }*/
 

@@ -50,7 +50,7 @@ pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<output::YexRecord>)
         -> Vec<trial::Observation>{
     let mut obs_out: Vec<Observation> = Vec::new();
     let mut session = session.lock().unwrap();
-    events_out.send(YexEvent::Session().into()).unwrap();
+    events_out.send(YexEvent::Session(session.state.clone()).into()).unwrap();
     session.state = State::Welcome;
     sleep(Duration::from_millis(500));
     for block in session.exp.blocks.iter(){
@@ -79,6 +79,7 @@ pub mod session {
     use super::{Instant, Language, Text};
     use super::block::Block;
 
+    #[derive(Debug, Clone)]
     pub struct Session {
         pub id: Instant,
         pub part: Participant,
@@ -86,6 +87,7 @@ pub mod session {
         pub state: State,
     }
 
+    #[derive(Debug, Clone)]
     pub enum State {
         Init,
         Welcome,
@@ -105,7 +107,7 @@ pub mod session {
     }
 
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct Participant {
         pub id: usize,
         pub age: i8,
@@ -119,13 +121,13 @@ pub mod session {
         }
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub enum Sex {
         Male,
         Female,
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub enum Gender {
         Straight(Sex),
         Gay(Sex),
@@ -141,7 +143,7 @@ pub mod session {
     /// data-only class as Session is doing the run()
 
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct Experiment {
         pub id: String,
         pub blocks: Vec<Block>,
@@ -176,7 +178,7 @@ pub mod block {
     /// + running through trials
     /// + sending block-level events
     /// 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct Block{
         pub id: Instant,
         pub trials: Vec<Trial>,
@@ -200,7 +202,7 @@ pub mod block {
         }
     }
 
-    #[derive(Clone, PartialEq)]    
+    #[derive(Clone, PartialEq, Debug)]    
     /// Block states
     /// 
     pub enum State {
@@ -222,7 +224,7 @@ pub mod block {
 
     /// Relax types for Blocks
     ///
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub enum Relax {
         Now,
         Wait(Duration),
@@ -242,7 +244,7 @@ pub mod block {
     /// 4. Run the relax period
     /// 
         pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Vec<Observation>> {
-            events_out.send(YexEvent::Block().into()).unwrap();
+            events_out.send(YexEvent::Block(self.state.clone()).into()).unwrap();
             let mut out: Vec<Observation> = Vec::new();
             self.state = State::Prelude;
             match self.prelude.clone() {
@@ -292,7 +294,7 @@ pub mod trial {
     /// A trial is a Stimulus with a Prelude and Advance frame
     /// 
 
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, Debug, PartialEq)]
     pub struct Trial {
         pub prelude: Prelude,
         pub stimulus: Stimulus,
@@ -324,9 +326,10 @@ pub mod trial {
             self.clone()
         }
         pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Observation> {
-            events_out.send(YexEvent::Trial().into()).unwrap();
+            events_out.send(YexEvent::Trial(self.state).into()).unwrap();
             self.prepare();
             self.state = State::Prelude;
+            events_out.send(YexEvent::Trial(self.state).into()).unwrap();
             match self.prelude {
                 Prelude::Now => {},
                 Prelude::Blank(dur) | Prelude::Fix(dur) 
@@ -334,7 +337,7 @@ pub mod trial {
                 Prelude::Prime(_,_) => todo!(),
             }
             self.state = State::Present;
-            events_out.send(YexEvent::Stimulus().into()).unwrap();
+            events_out.send(YexEvent::Stimulus(self.stimulus.clone()).into()).unwrap();
             // Emulating the incoming response from the participant.
             // 
             // Here we will have time-outs and user events intermixed.
@@ -365,7 +368,7 @@ pub mod trial {
     }
 
     use image;
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, Debug, PartialEq)]
     pub enum Stimulus {
         Blank(Duration),
         Text(Duration, i8, [i8; 3]),
@@ -377,7 +380,7 @@ pub mod trial {
         {self}
     }
 
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     pub enum Prelude {
         Now,
         Blank(Duration),
@@ -385,7 +388,7 @@ pub mod trial {
         Prime(Duration, Stimulus),
     }
 
-    #[derive(Clone, PartialEq)]
+    #[derive(Clone, PartialEq, Debug)]
     pub enum Advance {
         Wait(Duration),
         Keys(Vec<Key>),
@@ -414,8 +417,10 @@ pub mod trial {
 /// + observations
 
 pub mod output {
+    use super::{session, block, trial};
     use super::{Key, Instant};
-    use super::trial::Response;
+    //use super::trial::{State, Stimulus, Response};
+    //use super::block::State;
 
     #[derive(Debug)]
     pub enum YexError {
@@ -427,12 +432,12 @@ pub mod output {
     #[derive(Debug)]
     pub enum YexEvent {
         Error(YexError),
-        Session(),
-        Block(),
-        Trial(),
-        Stimulus(),
+        Session(session::State),
+        Block(block::State),
+        Trial(trial::State),
+        Stimulus(trial::Stimulus),
         KeyPress(Key),
-        Response(Response),
+        Response(trial::Response),
     }
 
     /// Into from Event to Record

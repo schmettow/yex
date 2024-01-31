@@ -9,17 +9,12 @@ edition = "2021"
 name = "yex"
 path = "src/yex/mod.rs"
 
+
 [dependencies]
 image = { version = "0.24", default-features = false, features = ["png"] }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 isolang = "2.4.0"
-embassy-async = "0.0.0"
-embassy-futures = "0.1.1"
-embassy-time = "0.3.0"
-embassy-sync = "0.5.0"
-embassy-executor = "0.5.0"
-embassy-executor-macros = "0.4.1"
 static_cell = "2.0.0"
 futures = "0.3.30"
 futures-timer = "3.0.2"

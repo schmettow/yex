@@ -207,8 +207,8 @@ pub mod block {
     /// 
     pub enum State {
         Init,
-        Prelude,
-        Present(usize), // trial number
+        Prelude(Prelude),
+        Trials(), // trial number
         Relax
     }
 
@@ -246,7 +246,8 @@ pub mod block {
         pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Vec<Observation>> {
             events_out.send(YexEvent::Block(self.state.clone()).into()).unwrap();
             let mut out: Vec<Observation> = Vec::new();
-            self.state = State::Prelude;
+            self.state = State::Prelude(self.prelude.clone());
+            events_out.send(YexEvent::Block(self.state.clone()).into()).unwrap();
             match self.prelude.clone() {
                 Prelude::Now
                     => {},
@@ -256,7 +257,8 @@ pub mod block {
                     => {sleep(dur);},
                 _   => todo!(),
             }
-
+            self.state = State::Trials();
+            events_out.send(YexEvent::Block(self.state.clone()).into()).unwrap();
             for trial in self.trials.clone(){
                 // making an observation by running a trial
                 let obs 
@@ -270,6 +272,7 @@ pub mod block {
             }
 
             self.state = State::Relax;
+            events_out.send(YexEvent::Block(self.state.clone()).into()).unwrap();
             match self.relax {
                 Relax::Now 
                     => {}, // do nothing is not the same as not implemented
@@ -302,12 +305,12 @@ pub mod trial {
         pub state: State
     }
     
-    #[derive(Clone, Copy, PartialEq, Debug)]
+    #[derive(Clone, PartialEq, Debug)]
     pub enum State {
         Init,
         Prelude,
-        Present,
-        Feedback
+        Present(Stimulus),
+        Feedback()
     }
     
     impl Default for Trial {
@@ -326,18 +329,18 @@ pub mod trial {
             self.clone()
         }
         pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Observation> {
-            events_out.send(YexEvent::Trial(self.state).into()).unwrap();
+            events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
             self.prepare();
             self.state = State::Prelude;
-            events_out.send(YexEvent::Trial(self.state).into()).unwrap();
+            events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
             match self.prelude {
                 Prelude::Now => {},
                 Prelude::Blank(dur) | Prelude::Fix(dur) 
                     => {sleep(dur);},
                 Prelude::Prime(_,_) => todo!(),
             }
-            self.state = State::Present;
-            events_out.send(YexEvent::Stimulus(self.stimulus.clone()).into()).unwrap();
+            self.state = State::Present(self.stimulus.clone());
+            events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
             // Emulating the incoming response from the participant.
             // 
             // Here we will have time-outs and user events intermixed.
@@ -346,6 +349,12 @@ pub mod trial {
             sleep(Duration::from_millis(500));
             let response = Response::Choice('y');
             events_out.send(YexEvent::Response(response).into()).unwrap();
+            self.state = State::Feedback();
+            events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
+            match self.advance {
+                Advance::Wait(dur) => {sleep(dur)},
+                _ => {todo!();},
+            }
             return Some(Observation::new(self.clone(), response))
         }
     }

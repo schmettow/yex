@@ -23,9 +23,12 @@ mod exp;
 pub use std::time::{Instant, Duration};
 pub use std::thread::sleep;
 pub use std::sync::{Arc,Mutex};
-pub use std::sync::mpsc::{channel, Sender, Receiver};
-pub use output::YexEvent;
-//use futures::channel::mpsc;
+pub use crossbeam_channel::unbounded as channel;
+pub use crossbeam_channel::{Sender, Receiver};
+pub use output::{YexEvent, YexRecord};
+pub use exp::{session, block, trial};
+pub use session::Session;
+pub use trial::Observation;
 pub use isolang::Language;
 
 /// Input events
@@ -40,19 +43,18 @@ pub enum Event {
     AdvanceAfter(Duration)
 }
 
+
+
+
 /// Demo runtime
 /// 
 /// cycles through a brief demo experiment
 /// Collects virtual responses and completes with a Vector of Observations
 
-use exp::*;
-use trial::Observation;
-use session::Session;
-use output::YexRecord;
-
 pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<YexRecord>)
-        -> Vec<Observation>{
-
+        -> Vec<exp::trial::Observation>{
+    use exp::*;
+    use trial::Observation;
     let mut obs_out: Vec<Observation> = Vec::new();
     let mut session = session.lock().unwrap();
     let mut state = &session.state;
@@ -80,13 +82,13 @@ pub fn demo(session: Arc<Mutex<Session>>, events_out: Sender<YexRecord>)
 /// + observations
 
 pub mod output {
-    use super::exp::{session, block, trial};
-    use super::{Key, Instant};
+    pub use super::exp::{session, block, trial};
+    pub use super::{Key, Instant};
 
     #[derive(Debug)]
     pub enum YexError {
-        FileNotFound(),
-        PartInterrupt(),
+        FileNotFound,
+        PartInterrupt,
 
     }
 
@@ -97,9 +99,11 @@ pub mod output {
         Block(block::State),
         Trial(trial::State),
         Stimulus(trial::Stimulus),
-        KeyPress(Key),
+        WaitForKey(Key),
+        WaitForPos((f32, f32)),
         Response(trial::Response),
     }
+
 
     /// Into from Event to Record
     /// 

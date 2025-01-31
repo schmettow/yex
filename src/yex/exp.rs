@@ -6,7 +6,6 @@
 /// + runs linearly through the steps of the experiment
 /// + sending high-level events
 
-
 use super::*;
 pub mod session {
     use super::*;
@@ -123,7 +122,13 @@ pub mod block {
         pub state: State,
     }
 
-
+    /// Default Block
+    ///
+    /// Three trials in given order with
+    /// + default trial
+    /// + a 1s blank prelude
+    /// + 2s relaxation period
+    ///
     impl Default for Block {
         fn default() -> Self {
             let trials = vec![Trial::default(); 3];
@@ -225,7 +230,9 @@ pub mod block {
 ///
 
 pub mod trial {
-    use crate::output::YexRecord;
+    use std::path::PathBuf;
+    use std::time::Instant;
+    use crate::output::{YexError, YexRecord};
 
     use super::{Duration, sleep, Key, Sender, YexEvent};
 
@@ -248,24 +255,39 @@ pub mod trial {
         Feedback()
     }
 
+    /// Default Trial
+    ///
+    /// Three trials in given order with
+    /// + 500ms each for prelude, stim and time advance
+    /// +
+    /// + a 1s blank prelude
+    /// + 2s relaxation period
+    ///
     impl Default for Trial {
         fn default() -> Self {
             Self {  state: State::Init,
                 prelude: Prelude::Blank(Duration::from_micros(500)) ,
-                stimulus: Stimulus::Blank(Duration::from_micros(500)),
+                stimulus: Stimulus::Blank{dur: Duration::from_micros(500)},
                 advance: Advance::Wait(Duration::from_millis(500))}
         }
     }
 
     impl Trial {
 
-        pub fn prepare(&mut self) -> Self{
-            self.stimulus.load();
-            self.clone()
+        pub fn prepare(&mut self) -> Result<(), YexError> {
+            let mut stimulus = &self.stimulus;
+            match stimulus {
+                Stimulus::Image {path, dur, mut img} => {
+                    stimulus.load();
+                    Ok(())
+                },
+                _ => Err(YexError::FileNotFound)
+            }
+
         }
         pub fn run(&mut self, events_out: Sender<YexRecord>) -> Option<Observation> {
             events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
-            self.prepare();
+            self.prepare().unwrap();
             self.state = State::Prelude;
             events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
             match self.prelude {
@@ -276,13 +298,15 @@ pub mod trial {
             }
             self.state = State::Present(self.stimulus.clone());
             events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
+            let time_when_presented = Instant::now();
             // Emulating the incoming response from the participant.
             //
             // Here we will have time-outs and user events intermixed.
             // Would be nice to have some async here, maybe
             // block_on(select())
             sleep(Duration::from_millis(500));
-            let response = Response::Choice('y');
+            let rt = time_when_presented.elapsed();
+            let response = Response::Choice(rt, 'y');
             events_out.send(YexEvent::Response(response).into()).unwrap();
             self.state = State::Feedback();
             events_out.send(YexEvent::Trial(self.state.clone()).into()).unwrap();
@@ -294,35 +318,186 @@ pub mod trial {
         }
     }
 
+
+
+    /// Observations
+    ///
+    /// ... are the combination of a stimulus and a response.
+    /// The main purpose is to create rows for a data frame.
+
+    /// Note that this does not provide access to participant data.
+
     #[derive(Clone, PartialEq)]
     pub struct Observation {
         pub trial: Trial,
         pub response: Response,
     }
 
-    /// An observation is composed of a trial and an observation
-
-    // We will need access to higher level information
-    // to add part and exp level data
-
     impl Observation {
+        const OBS_TBL_HEAD: DF = df!(
+                "presentation_time" => vec!([] as f64),
+                "rt" => vec!([] as f64),
+            ).unwrap();
+
         pub fn new(trial: Trial, response: Response) -> Self {
             Self{trial, response}
         }
+
+        pub fn get_row(&self) -> DF {
+            let &stimulus = &self.trial.stimulus;
+            let &response = &self.response;
+            let presentation_time: f64 = stimulus.get_ptime().as_millis() as f64;
+            let presentation_time = Series::new("ptime".into(),[presentation_time]);
+            let rt: Option<f64> = Some(response.rt().unwrap().as_millis() as f64);
+            let rt = Series::new("ptime".into(), [rt]);
+            DF::new(vec!(presentation_time, rt)).unwrap()
+
+        }
+
     }
+
+    use polars::*;
+    use polars::frame::DataFrame as DF;
+    use polars::series::Series;
+    impl Into<DF> for Observation {
+        fn into(self) -> DF {
+            let stimulus = self.trial.stimulus;
+            let response = self.response;
+            let presentation_time: f64 = stimulus.get_ptime().as_millis() as f64;
+            let presentation_time = Series::new("ptime".into(),[presentation_time]);
+            let rt: Option<f64> = Some(response.rt().unwrap().as_millis() as f64);
+            let rt = Series::new("ptime".into(), [rt]);
+            DF::new(vec!(presentation_time, rt)).unwrap()
+        }
+    }
+
+    pub fn to_dataframe(mut obs: Vec<Observation>) -> DF {
+        let mut out = df!(
+                "presentation_time" => vec!([] as f64),
+                "rt" => vec!([] as f64),
+            ).unwrap();
+        for o in obs[1..].iter() {
+            out.extend(o.data_row());
+        }
+        out
+    }
+
+    impl Observation {
+        fn into(self) -> DF {
+            let stimulus = self.trial.stimulus;
+            let response = self.response;
+            let presentation_time: f64 = stimulus.get_ptime().into();
+            let rt: Option<f64> = response.rt().into();
+            df!(
+                "presentation_time" => [presentation_time],
+                "rt" => [rt],
+            );
+
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub enum Response {
+        RT(Duration),
+        Choice(Duration, Key),
+        Graded(Duration, f32),
+        TimedTest(Duration, bool),
+        TooLate(),
+    }
+
+    impl Response {
+
+        /// Reaction time
+        ///
+        /// Extracts some reaction time, or None
+        pub fn rt(self) -> Option<Duration> {
+            match self {
+                Response::RT(dur) => Some(dur),
+                Response::Choice(dur, _) => Some(dur),
+                Response::Graded(dur, _) => Some(dur),
+                Response::TimedTest(dur, result) => Some(dur),
+                Response::TooLate() => None,
+            }
+        }
+    }
+
+
 
     use image;
-    #[derive(Clone, Debug, PartialEq)]
-    pub enum Stimulus {
-        Blank(Duration),
-        Text(Duration, i8, [i8; 3]),
-        Image(Duration, image::RgbaImage, [usize; 4]),
+    use image::RgbaImage;
+    use polars::chunked_array::ChunkedArray;
+    use polars::prelude::{NamedFrom, PlSmallStr};
+
+    /*pub struct StimText {
+        pub dur: Duration,
+        pub text: String,
     }
 
-    impl Stimulus{
-        pub fn load(&mut self) -> &Self
-        {self}
+    pub struct StimImage {
+        pub dur: Duration,
+        pub path: PathBuf,
+        pub img : Option<image::RgbaImage>,
     }
+
+    impl Stimulus::Image {
+        pub fn load(&mut self) -> &Self {
+            let raw_img = image::open(self.path()).unwrap();
+            self.img = Some(raw_img.into());
+            }
+    }
+
+    pub struct StimBlank {
+        pub dur: Duration,
+    }
+    */
+
+    #[derive(Clone, Debug, PartialEq)]
+    pub enum Stimulus {
+        Blank { dur: Duration },
+        Text  { dur: Duration,
+                text: String,},
+        Image { dur: Duration,
+                path: PathBuf,
+                img : Option<RgbaImage>,},
+    }
+
+    impl Stimulus {
+        pub fn get_ptime(self) -> Duration {
+            match self {
+                Stimulus::Blank { dur } => dur,
+                Stimulus::Text { dur, .. } => dur,
+                Stimulus::Image { dur, .. } => dur,
+            }
+        }
+
+        pub fn load(&mut self) -> Option<()> {
+            if let Stimulus::Image{dur, path, mut img} = self {
+                if let raw_img = image::open(self.path()).unwrap() {
+                    img = Some(raw_img.into());
+                    Some(())
+                }
+            }
+            None
+        }
+
+        pub fn get_path(self) -> Option<PathBuf> {
+            if let Stimulus::Image{dur, path, img} = self {
+                return Some(path)
+            }
+            None
+        }
+
+        pub fn id(&self) -> PlSmallStr {
+            if let Stimulus::Image{dur, path, img} = self {
+                return Some(path().pop().into())
+            }
+            None
+        }
+
+
+    }
+
+
 
     #[derive(Clone, PartialEq, Debug)]
     pub enum Prelude {
@@ -337,15 +512,6 @@ pub mod trial {
         Wait(Duration),
         Keys(Vec<Key>),
         KeysMaxWait(Vec<Key>, Duration)
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    pub enum Response {
-        RT(Duration),
-        RTCorrect(Duration, bool),
-        Choice(Key),
-        Graded(f32),
-        TooLate,
     }
 
     #[derive(Clone, Copy, PartialEq)]

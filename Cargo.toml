@@ -5,12 +5,17 @@ authors = ["Martin Schmettow <schmettow@web.de>"]
 edition = "2021"
 #rust-version = "1.75.0"
 
-[lib]
-name = "yex"
-path = "src/yex/mod.rs"
+#[lib]
+#name = "yex"
+#path = "src/yex/mod.rs"
+
+[[example]]
+name = "quad_bright"
+
+
 
 [dependencies]
-image = { version = "0.24", default-features = false, features = ["png"] }
+image = { version = "0.25.5", default-features = false, features = ["png"] }
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 isolang = "2.4.0"
@@ -19,15 +24,32 @@ futures = "0.3.30"
 futures-timer = "3.0.2"
 nannou = "0.19.0"
 nannou_egui = "0.19.0"
-rand_distr = "0.4.3"
+rand_distr = "0.5.0"
+crossbeam-channel = "0.5.13"
+polars = "0.46.0"
+imageproc = "0.25.0"
+ndarray = "0.16.1"
+linregress = "0.5.0"
+
+[dependencies.nokhwa]
+version = "0.10.0"
+# Use the native input backends, enable WGPU integration
+#features = ["input-native", "output-wgpu"]
+features = ["input-native"]
+
+
+#[dependencies.nokhwa]
+#version = "0.10.0"
+# Use the native input backends, enable WGPU integration
+#features = ["input-native", "output-wgpu"]
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.10"
+env_logger = "0.11.6"
 
 # web:
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen-futures = "0.4"
+#[target.'cfg(target_arch = "wasm32")'.dependencies]
+#wasm-bindgen-futures = "0.4.50"
 
 
 [profile.release]

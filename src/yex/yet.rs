@@ -1,4 +1,16 @@
 use std::sync::mpsc::{Receiver, Sender};
+#[derive(Debug)]
+pub enum Error {
+    CamNotFound,
+    InsufficientData,
+    PartInterrupt,
+}
+
+#[derive(Debug)]
+pub enum YetEvent {
+    Error(Error),
+    NewPosition((f32, f32)),
+}
 
 pub mod yet {
     use nannou::color::Srgb;
